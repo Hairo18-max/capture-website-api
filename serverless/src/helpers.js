@@ -207,41 +207,41 @@ async function takePlainPuppeteerScreenshot(url, options) {
             const didClose = !!closed && typeof closed === 'object';
 
             if (closed && typeof closed === 'object') {
-                await page.mouse.click(closed.x, closed.y);
-
-                // TEMPORARY DEBUG: mark the exact fallback click position.
+                // TEMPORARY DEBUG: show the click position in the screenshot.
                 await page.evaluate(({ x, y }) => {
                     const marker = document.createElement('div');
                     marker.style.cssText = `
                         position: fixed;
-                        left: ${x - 18}px;
-                        top: ${y - 18}px;
-                        width: 36px;
-                        height: 36px;
+                        left: ${x}px;
+                        top: ${y}px;
+                        width: 34px;
+                        height: 34px;
                         border: 3px solid red;
                         border-radius: 50%;
+                        background: rgba(255, 0, 0, 0.18);
                         box-sizing: border-box;
+                        transform: translate(-50%, -50%);
                         z-index: 2147483647;
                         pointer-events: none;
-                        background: rgba(255, 0, 0, 0.15);
                     `;
 
-                    const crosshair = document.createElement('div');
-                    crosshair.style.cssText = `
+                    const cursor = document.createElement('div');
+                    cursor.style.cssText = `
                         position: absolute;
-                        left: 50%;
-                        top: 50%;
-                        width: 4px;
-                        height: 4px;
-                        background: red;
-                        border: 1px solid white;
-                        border-radius: 50%;
-                        transform: translate(-50%, -50%);
+                        left: 8px;
+                        top: 7px;
+                        width: 0;
+                        height: 0;
+                        border-top: 17px solid red;
+                        border-right: 11px solid transparent;
+                        filter: drop-shadow(1px 1px 1px white);
                     `;
 
-                    marker.appendChild(crosshair);
+                    marker.appendChild(cursor);
                     document.body.appendChild(marker);
                 }, closed);
+
+                await page.mouse.click(closed.x, closed.y);
 
                 console.info(
                     `MAL debug click: method=${closed.method}, x=${closed.x}, y=${closed.y}`
