@@ -192,15 +192,19 @@ async function takePlainPuppeteerScreenshot(url, options) {
                     if (!target || !modal.contains(target)) return false;
 
                     // Return coordinates so Puppeteer can perform a real pointer click.
-                    return { x: closeX, y: closeY };
+                    return { x: closeX, y: closeY, method: 'coordinate-fallback' };
                 }
 
-                closeCandidates[0].element.click();
-                return true;
+                // Use Puppeteer's real mouse click for detected close elements too.
+                const closeRect = closeCandidates[0].element.getBoundingClientRect();
+                return {
+                    x: closeRect.left + closeRect.width / 2,
+                    y: closeRect.top + closeRect.height / 2,
+                    method: 'detected-element'
+                };
             });
 
-            const didClose = closed === true ||
-                (closed && typeof closed === 'object');
+            const didClose = !!closed && typeof closed === 'object';
 
             if (closed && typeof closed === 'object') {
                 await page.mouse.click(closed.x, closed.y);
@@ -239,7 +243,9 @@ async function takePlainPuppeteerScreenshot(url, options) {
                     document.body.appendChild(marker);
                 }, closed);
 
-                console.info(`MAL debug click position: x=${closed.x}, y=${closed.y}`);
+                console.info(
+                    `MAL debug click: method=${closed.method}, x=${closed.x}, y=${closed.y}`
+                );
             }
 
             console.info(
