@@ -204,6 +204,42 @@ async function takePlainPuppeteerScreenshot(url, options) {
 
             if (closed && typeof closed === 'object') {
                 await page.mouse.click(closed.x, closed.y);
+
+                // TEMPORARY DEBUG: mark the exact fallback click position.
+                await page.evaluate(({ x, y }) => {
+                    const marker = document.createElement('div');
+                    marker.style.cssText = `
+                        position: fixed;
+                        left: ${x - 18}px;
+                        top: ${y - 18}px;
+                        width: 36px;
+                        height: 36px;
+                        border: 3px solid red;
+                        border-radius: 50%;
+                        box-sizing: border-box;
+                        z-index: 2147483647;
+                        pointer-events: none;
+                        background: rgba(255, 0, 0, 0.15);
+                    `;
+
+                    const crosshair = document.createElement('div');
+                    crosshair.style.cssText = `
+                        position: absolute;
+                        left: 50%;
+                        top: 50%;
+                        width: 4px;
+                        height: 4px;
+                        background: red;
+                        border: 1px solid white;
+                        border-radius: 50%;
+                        transform: translate(-50%, -50%);
+                    `;
+
+                    marker.appendChild(crosshair);
+                    document.body.appendChild(marker);
+                }, closed);
+
+                console.info(`MAL debug click position: x=${closed.x}, y=${closed.y}`);
             }
 
             console.info(
