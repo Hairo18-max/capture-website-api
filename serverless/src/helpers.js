@@ -191,20 +191,28 @@ async function takePlainPuppeteerScreenshot(url, options) {
 
                     if (!target || !modal.contains(target)) return false;
 
-                    target.click();
-                    return true;
+                    // Return coordinates so Puppeteer can perform a real pointer click.
+                    return { x: closeX, y: closeY };
                 }
 
                 closeCandidates[0].element.click();
                 return true;
             });
 
+            const didClose = closed === true ||
+                (closed && typeof closed === 'object');
+
+            if (closed && typeof closed === 'object') {
+                await page.mouse.click(closed.x, closed.y);
+            }
+
             console.info(
-                closed
-                    ? 'Closed MAL privacy notice using its top-right close control.'
+                didClose
+                    ? 'Clicked MAL privacy notice top-right close control.'
                     : 'MAL privacy notice close control was not identified.'
             );
-            if (closed) {
+
+            if (didClose) {
                 await new Promise(resolve => setTimeout(resolve, 400));
             }
         }
