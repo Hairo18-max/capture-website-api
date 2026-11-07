@@ -181,7 +181,19 @@ async function takePlainPuppeteerScreenshot(url, options) {
                     candidate.hasCloseIcon
                 ).sort((a, b) => a.score - b.score);
 
-                if (!closeCandidates.length) return false;
+                if (!closeCandidates.length) {
+                    // MAL may render the X as a clickable element without a button role.
+                    // Its position is near the modal's top-right corner.
+                    const rect = modal.getBoundingClientRect();
+                    const closeX = rect.right - rect.width * 0.06;
+                    const closeY = rect.top + rect.height * 0.048;
+                    const target = document.elementFromPoint(closeX, closeY);
+
+                    if (!target || !modal.contains(target)) return false;
+
+                    target.click();
+                    return true;
+                }
 
                 closeCandidates[0].element.click();
                 return true;
