@@ -185,7 +185,7 @@ async function takePlainPuppeteerScreenshot(url, options) {
                     // MAL may render the X as a clickable element without a button role.
                     // Its position is near the modal's top-right corner.
                     const rect = modal.getBoundingClientRect();
-                    const closeX = rect.right - rect.width * 0.06;
+                    const closeX = rect.right - rect.width * 0.03;
                     const closeY = rect.top + rect.height * 0.048;
                     const target = document.elementFromPoint(closeX, closeY);
 
