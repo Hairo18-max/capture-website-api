@@ -97,87 +97,70 @@ async function takePlainPuppeteerScreenshot(url, options) {
         await setViewport(page, options);
         await new Promise(r => setTimeout(r, options.wait_before_screenshot_ms));
 
-        // TEMPORARY MAL DOM INSPECTION — does not click anything.
+        // Click only the explicitly labelled Confirm button in MAL's Quantcast dialog.
         const hostname = new URL(url).hostname;
         if (hostname === 'myanimelist.net' || hostname.endsWith('.myanimelist.net')) {
-            const diagnostic = await page.evaluate(() => {
-                const phrase = 'do not process my personal information';
-                const all = Array.from(document.querySelectorAll('body *'));
+            const target = await page.evaluate(() => {
+                const root = document.querySelector('#qc-cmp2-container');
 
-                const matches = all.filter(element =>
-                    (element.innerText || element.textContent || '')
-                        .toLowerCase().includes(phrase)
-                ).sort((a, b) =>
-                    (a.innerText || a.textContent || '').length -
-                    (b.innerText || b.textContent || '').length
-                );
+                if (!root) return { error: 'Quantcast container not found' };
 
-                const describe = element => {
+                const controls = Array.from(root.querySelectorAll(
+                    'button, [role="button"], a, [tabindex]'
+                ));
+
+                const matches = controls.filter(element => {
                     const rect = element.getBoundingClientRect();
                     const style = getComputedStyle(element);
+                    const text = (element.innerText || element.textContent || '')
+                        .trim().replace(/\s+/g, ' ');
+                    const aria = (element.getAttribute('aria-label') || '').trim();
+                    const title = (element.getAttribute('title') || '').trim();
 
+                    return (
+                        /^confirm$/i.test(text) ||
+                        /^confirm$/i.test(aria) ||
+                        /^confirm$/i.test(title)
+                    ) &&
+                    rect.width > 0 &&
+                    rect.height > 0 &&
+                    style.display !== 'none' &&
+                    style.visibility !== 'hidden' &&
+                    style.pointerEvents !== 'none';
+                });
+
+                if (matches.length !== 1) {
                     return {
-                        tag: element.tagName,
-                        id: element.id || '',
-                        class: typeof element.className === 'string'
-                            ? element.className.slice(0, 180) : '',
-                        role: element.getAttribute('role'),
-                        ariaLabel: element.getAttribute('aria-label'),
-                        title: element.getAttribute('title'),
-                        text: (element.innerText || element.textContent || '')
-                            .trim().replace(/\s+/g, ' ').slice(0, 120),
-                        rect: {
-                            x: Math.round(rect.x),
-                            y: Math.round(rect.y),
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height)
-                        },
-                        display: style.display,
-                        visibility: style.visibility
+                        error: matches.length
+                            ? 'Multiple exact Confirm controls found'
+                            : 'Exact Confirm control not found',
+                        matches: matches.map(element => ({
+                            tag: element.tagName,
+                            text: (element.innerText || element.textContent || '')
+                                .trim().slice(0, 100),
+                            ariaLabel: element.getAttribute('aria-label'),
+                            title: element.getAttribute('title')
+                        }))
                     };
-                };
-
-                const ancestors = [];
-                if (matches.length) {
-                    let element = matches[0];
-                    for (let i = 0; element && i < 9; i++, element = element.parentElement) {
-                        ancestors.push(describe(element));
-                    }
                 }
 
-                const controls = all.filter(element =>
-                    element.matches(
-                        'button, [role="button"], a, [tabindex], [aria-label], [title]'
-                    )
-                ).map(describe).filter(item =>
-                    item.rect.width > 0 &&
-                    item.rect.height > 0 &&
-                    item.rect.x < window.innerWidth &&
-                    item.rect.y < window.innerHeight &&
-                    item.rect.x + item.rect.width > 0 &&
-                    item.rect.y + item.rect.height > 0
-                ).sort((a, b) => {
-                    const centerX = window.innerWidth / 2;
-                    const centerY = window.innerHeight / 2;
-                    const distance = item =>
-                        Math.abs(item.rect.x + item.rect.width / 2 - centerX) +
-                        Math.abs(item.rect.y + item.rect.height / 2 - centerY);
-                    return distance(a) - distance(b);
-                }).slice(0, 25);
+                const rect = matches[0].getBoundingClientRect();
 
                 return {
-                    viewport: {
-                        width: window.innerWidth,
-                        height: window.innerHeight
-                    },
-                    phraseFound: matches.length,
-                    matchingElements: matches.slice(0, 5).map(describe),
-                    ancestors,
-                    nearbyControls: controls
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2
                 };
             });
 
-            console.info('MAL DOM DIAGNOSTIC: ' + JSON.stringify(diagnostic));
+            if (typeof target.x === 'number' && typeof target.y === 'number') {
+                await page.mouse.click(target.x, target.y);
+                console.info(
+                    `MAL Confirm clicked: x=${target.x}, y=${target.y}`
+                );
+                await new Promise(resolve => setTimeout(resolve, 600));
+            } else {
+                console.info('MAL Confirm not clicked: ' + JSON.stringify(target));
+            }
         }
 
         const array = await page.screenshot();
