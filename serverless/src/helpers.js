@@ -234,6 +234,29 @@ async function takePlainPuppeteerScreenshot(url, options) {
             }
         }
 
+        if (hostname === 'myanimelist.net' || hostname.endsWith('.myanimelist.net')) {
+            const layout = await page.evaluate(() => {
+                return ['#contentWrapper', '#content', '#contentWrapper > div']
+                    .map(selector => {
+                        const element = document.querySelector(selector);
+                        if (!element) return { selector, found: false };
+
+                        const rect = element.getBoundingClientRect();
+                        return {
+                            selector,
+                            found: true,
+                            left: Math.round(rect.left),
+                            right: Math.round(rect.right),
+                            width: Math.round(rect.width),
+                            viewportWidth: window.innerWidth,
+                            scrollWidth: document.documentElement.scrollWidth
+                        };
+                    });
+            });
+
+            console.info('MAL LAYOUT DIAGNOSTIC: ' + JSON.stringify(layout));
+        }
+
         const array = await page.screenshot();
         buffer = Buffer.from(array);
     } catch (e) {
