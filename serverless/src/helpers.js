@@ -235,26 +235,54 @@ async function takePlainPuppeteerScreenshot(url, options) {
         }
 
         if (hostname === 'myanimelist.net' || hostname.endsWith('.myanimelist.net')) {
-            const layout = await page.evaluate(() => {
-                return ['#contentWrapper', '#content', '#contentWrapper > div']
-                    .map(selector => {
-                        const element = document.querySelector(selector);
-                        if (!element) return { selector, found: false };
+            const contentWidth = await page.evaluate(() => {
+                const element = document.querySelector('#contentWrapper');
+                if (!element) return null;
 
-                        const rect = element.getBoundingClientRect();
-                        return {
-                            selector,
-                            found: true,
-                            left: Math.round(rect.left),
-                            right: Math.round(rect.right),
-                            width: Math.round(rect.width),
-                            viewportWidth: window.innerWidth,
-                            scrollWidth: document.documentElement.scrollWidth
-                        };
-                    });
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+
+                if (
+                    rect.width <= 0 ||
+                    style.display === 'none' ||
+                    style.visibility === 'hidden'
+                ) {
+                    return null;
+                }
+
+                return Math.ceil(rect.width);
             });
 
-            console.info('MAL LAYOUT DIAGNOSTIC: ' + JSON.stringify(layout));
+            const viewport = page.viewport();
+
+            if (
+                Number.isFinite(contentWidth) &&
+                contentWidth > 0 &&
+                viewport &&
+                contentWidth < viewport.width
+            ) {
+                await page.setViewport({
+                    ...viewport,
+                    width: contentWidth
+                });
+
+                const resizedWidth = await page.evaluate(() => {
+                    const element = document.querySelector('#contentWrapper');
+                    return element
+                        ? Math.ceil(element.getBoundingClientRect().width)
+                        : null;
+                });
+
+                console.info(
+                    `MAL viewport resized: ${viewport.width} -> ${contentWidth}; ` +
+                    `container after resize: ${resizedWidth}`
+                );
+            } else {
+                console.info(
+                    'MAL viewport resize skipped: ' +
+                    JSON.stringify({ contentWidth, viewportWidth: viewport?.width })
+                );
+            }
         }
 
         const array = await page.screenshot();
