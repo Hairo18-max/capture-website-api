@@ -97,166 +97,87 @@ async function takePlainPuppeteerScreenshot(url, options) {
         await setViewport(page, options);
         await new Promise(r => setTimeout(r, options.wait_before_screenshot_ms));
 
-        // Close only the X control in MAL's privacy notice modal.
+        // TEMPORARY MAL DOM INSPECTION — does not click anything.
         const hostname = new URL(url).hostname;
         if (hostname === 'myanimelist.net' || hostname.endsWith('.myanimelist.net')) {
-            const closed = await page.evaluate(() => {
+            const diagnostic = await page.evaluate(() => {
                 const phrase = 'do not process my personal information';
+                const all = Array.from(document.querySelectorAll('body *'));
 
-                const matchingElements = Array.from(document.querySelectorAll('body *'))
-                    .filter(element => {
-                        const text = (element.innerText || '').toLowerCase();
-                        return text.includes(phrase) && text.length < 5000;
-                    })
-                    .sort((a, b) =>
-                        (a.innerText || '').length - (b.innerText || '').length
-                    );
+                const matches = all.filter(element =>
+                    (element.innerText || element.textContent || '')
+                        .toLowerCase().includes(phrase)
+                ).sort((a, b) =>
+                    (a.innerText || a.textContent || '').length -
+                    (b.innerText || b.textContent || '').length
+                );
 
-                if (!matchingElements.length) return false;
-
-                const viewportWidth = window.innerWidth;
-                const viewportHeight = window.innerHeight;
-                let modal = null;
-
-                // Find the smallest centered ancestor large enough to be the modal.
-                for (let element = matchingElements[0];
-                     element && element !== document.body;
-                     element = element.parentElement) {
+                const describe = element => {
                     const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
 
-                    if (
-                        rect.width >= viewportWidth * 0.45 &&
-                        rect.height >= viewportHeight * 0.45 &&
-                        Math.abs((rect.left + rect.right) / 2 - viewportWidth / 2) < viewportWidth * 0.25 &&
-                        Math.abs((rect.top + rect.bottom) / 2 - viewportHeight / 2) < viewportHeight * 0.25
-                    ) {
-                        modal = element;
-                        break;
+                    return {
+                        tag: element.tagName,
+                        id: element.id || '',
+                        class: typeof element.className === 'string'
+                            ? element.className.slice(0, 180) : '',
+                        role: element.getAttribute('role'),
+                        ariaLabel: element.getAttribute('aria-label'),
+                        title: element.getAttribute('title'),
+                        text: (element.innerText || element.textContent || '')
+                            .trim().replace(/\s+/g, ' ').slice(0, 120),
+                        rect: {
+                            x: Math.round(rect.x),
+                            y: Math.round(rect.y),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        },
+                        display: style.display,
+                        visibility: style.visibility
+                    };
+                };
+
+                const ancestors = [];
+                if (matches.length) {
+                    let element = matches[0];
+                    for (let i = 0; element && i < 9; i++, element = element.parentElement) {
+                        ancestors.push(describe(element));
                     }
                 }
 
-                if (!modal) return false;
+                const controls = all.filter(element =>
+                    element.matches(
+                        'button, [role="button"], a, [tabindex], [aria-label], [title]'
+                    )
+                ).map(describe).filter(item =>
+                    item.rect.width > 0 &&
+                    item.rect.height > 0 &&
+                    item.rect.x < window.innerWidth &&
+                    item.rect.y < window.innerHeight &&
+                    item.rect.x + item.rect.width > 0 &&
+                    item.rect.y + item.rect.height > 0
+                ).sort((a, b) => {
+                    const centerX = window.innerWidth / 2;
+                    const centerY = window.innerHeight / 2;
+                    const distance = item =>
+                        Math.abs(item.rect.x + item.rect.width / 2 - centerX) +
+                        Math.abs(item.rect.y + item.rect.height / 2 - centerY);
+                    return distance(a) - distance(b);
+                }).slice(0, 25);
 
-                const candidates = Array.from(modal.querySelectorAll(
-                    'button, [role="button"], a, [tabindex]'
-                ));
-
-                const closeCandidates = candidates.map(element => {
-                    const rect = element.getBoundingClientRect();
-                    const style = window.getComputedStyle(element);
-                    const label = [
-                        element.getAttribute('aria-label'),
-                        element.getAttribute('title'),
-                        element.innerText
-                    ].filter(Boolean).join(' ').toLowerCase();
-
-                    const visible =
-                        rect.width >= 12 && rect.width <= 80 &&
-                        rect.height >= 12 && rect.height <= 80 &&
-                        style.display !== 'none' &&
-                        style.visibility !== 'hidden';
-
-                    const nearTopRight =
-                        rect.left + rect.width / 2 > modal.getBoundingClientRect().right -
-                            modal.getBoundingClientRect().width * 0.15 &&
-                        rect.top + rect.height / 2 < modal.getBoundingClientRect().top +
-                            modal.getBoundingClientRect().height * 0.15;
-
-                    const hasCloseIcon =
-                        !!element.querySelector('svg') ||
-                        /close|dismiss|×|✕|✖/.test(label);
-
-                    return {
-                        element,
-                        visible,
-                        nearTopRight,
-                        hasCloseIcon,
-                        score:
-                            Math.abs(modal.getBoundingClientRect().right - rect.right) +
-                            Math.abs(rect.top - modal.getBoundingClientRect().top)
-                    };
-                }).filter(candidate =>
-                    candidate.visible &&
-                    candidate.nearTopRight &&
-                    candidate.hasCloseIcon
-                ).sort((a, b) => a.score - b.score);
-
-                if (!closeCandidates.length) {
-                    // MAL may render the X as a clickable element without a button role.
-                    // Its position is near the modal's top-right corner.
-                    const rect = modal.getBoundingClientRect();
-                    const closeX = rect.right - rect.width * 0.005;
-                    const closeY = rect.top + rect.height * 0.048;
-                    const target = document.elementFromPoint(closeX, closeY);
-
-                    if (!target || !modal.contains(target)) return false;
-
-                    // Return coordinates so Puppeteer can perform a real pointer click.
-                    return { x: closeX, y: closeY, method: 'coordinate-fallback' };
-                }
-
-                // Use Puppeteer's real mouse click for detected close elements too.
-                const closeRect = closeCandidates[0].element.getBoundingClientRect();
                 return {
-                    x: closeRect.left + closeRect.width / 2,
-                    y: closeRect.top + closeRect.height / 2,
-                    method: 'detected-element'
+                    viewport: {
+                        width: window.innerWidth,
+                        height: window.innerHeight
+                    },
+                    phraseFound: matches.length,
+                    matchingElements: matches.slice(0, 5).map(describe),
+                    ancestors,
+                    nearbyControls: controls
                 };
             });
 
-            const didClose = !!closed && typeof closed === 'object';
-
-            if (closed && typeof closed === 'object') {
-                // TEMPORARY DEBUG: show the click position in the screenshot.
-                await page.evaluate(({ x, y }) => {
-                    const marker = document.createElement('div');
-                    marker.style.cssText = `
-                        position: fixed;
-                        left: ${x}px;
-                        top: ${y}px;
-                        width: 34px;
-                        height: 34px;
-                        border: 3px solid red;
-                        border-radius: 50%;
-                        background: rgba(255, 0, 0, 0.18);
-                        box-sizing: border-box;
-                        transform: translate(-50%, -50%);
-                        z-index: 2147483647;
-                        pointer-events: none;
-                    `;
-
-                    const cursor = document.createElement('div');
-                    cursor.style.cssText = `
-                        position: absolute;
-                        left: 8px;
-                        top: 7px;
-                        width: 0;
-                        height: 0;
-                        border-top: 17px solid red;
-                        border-right: 11px solid transparent;
-                        filter: drop-shadow(1px 1px 1px white);
-                    `;
-
-                    marker.appendChild(cursor);
-                    document.body.appendChild(marker);
-                }, closed);
-
-                await page.mouse.click(closed.x, closed.y);
-
-                console.info(
-                    `MAL debug click: method=${closed.method}, x=${closed.x}, y=${closed.y}`
-                );
-            }
-
-            console.info(
-                didClose
-                    ? 'Clicked MAL privacy notice top-right close control.'
-                    : 'MAL privacy notice close control was not identified.'
-            );
-
-            if (didClose) {
-                await new Promise(resolve => setTimeout(resolve, 400));
-            }
+            console.info('MAL DOM DIAGNOSTIC: ' + JSON.stringify(diagnostic));
         }
 
         const array = await page.screenshot();
