@@ -158,6 +158,77 @@ async function takePlainPuppeteerScreenshot(url, options) {
                     `MAL Confirm clicked: x=${target.x}, y=${target.y}`
                 );
                 await new Promise(resolve => setTimeout(resolve, 600));
+
+                // Dismiss MAL's acknowledgement after Quantcast accepts the choices.
+                const acknowledgement = await page.evaluate(() => {
+                    const dialogs = Array.from(document.querySelectorAll(
+                        '[role="dialog"], [aria-modal="true"]'
+                    )).filter(dialog => {
+                        const rect = dialog.getBoundingClientRect();
+                        const style = getComputedStyle(dialog);
+                        return rect.width > 0 &&
+                            rect.height > 0 &&
+                            style.display !== 'none' &&
+                            style.visibility !== 'hidden';
+                    });
+
+                    const matches = dialogs.flatMap(dialog =>
+                        Array.from(dialog.querySelectorAll(
+                            'button, [role="button"], a, [tabindex]'
+                        )).filter(element => {
+                            const rect = element.getBoundingClientRect();
+                            const style = getComputedStyle(element);
+                            const text = (element.innerText || element.textContent || '')
+                                .trim().replace(/\s+/g, ' ');
+                            const aria = (element.getAttribute('aria-label') || '').trim();
+
+                            return (
+                                /^OK$/i.test(text) ||
+                                /^OK$/i.test(aria)
+                            ) &&
+                            rect.width > 0 &&
+                            rect.height > 0 &&
+                            style.display !== 'none' &&
+                            style.visibility !== 'hidden' &&
+                            style.pointerEvents !== 'none';
+                        })
+                    );
+
+                    if (matches.length !== 1) {
+                        return {
+                            error: matches.length
+                                ? 'Multiple acknowledgement OK controls found'
+                                : 'Acknowledgement OK control not found',
+                            count: matches.length,
+                            dialogsFound: dialogs.length
+                        };
+                    }
+
+                    const rect = matches[0].getBoundingClientRect();
+                    return {
+                        x: rect.left + rect.width / 2,
+                        y: rect.top + rect.height / 2
+                    };
+                });
+
+                if (
+                    typeof acknowledgement.x === 'number' &&
+                    typeof acknowledgement.y === 'number'
+                ) {
+                    await page.mouse.click(
+                        acknowledgement.x,
+                        acknowledgement.y
+                    );
+                    console.info(
+                        `MAL acknowledgement OK clicked: x=${acknowledgement.x}, y=${acknowledgement.y}`
+                    );
+                    await new Promise(resolve => setTimeout(resolve, 400));
+                } else {
+                    console.info(
+                        'MAL acknowledgement not clicked: ' +
+                        JSON.stringify(acknowledgement)
+                    );
+                }
             } else {
                 console.info('MAL Confirm not clicked: ' + JSON.stringify(target));
             }
