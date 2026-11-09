@@ -2,6 +2,24 @@ const {getSecret} = require('./config.js');
 const puppeteer = require('puppeteer-core');
 const chromium = require("@sparticuz/chromium");
 
+// Reuse the ads-only filter list across screenshot captures.
+let adBlockerPromise;
+
+async function getAdBlocker() {
+    if (!adBlockerPromise) {
+        adBlockerPromise = import('@ghostery/adblocker-puppeteer')
+            .then(({ PuppeteerBlocker }) =>
+                PuppeteerBlocker.fromPrebuiltAdsOnly(fetch)
+            )
+            .catch(error => {
+                adBlockerPromise = null;
+                throw error;
+            });
+    }
+
+    return adBlockerPromise;
+}
+
 async function doCaptureWork(queryParameters) {
     const options = await getOptions(queryParameters);
     const url = options.url;
@@ -87,6 +105,18 @@ async function takePlainPuppeteerScreenshot(url, options) {
     try {
         browser = await puppeteer.launch(options.launchOptions);
         page = await browser.newPage();
+
+        // Enable ads-only blocking before navigating to the target website.
+        try {
+            const adBlocker = await getAdBlocker();
+            await adBlocker.enableBlockingInPage(page);
+            console.info('Default ad blocking enabled.');
+        } catch (error) {
+            console.warn(
+                'Ad blocking unavailable; continuing without it: ' +
+                error.message
+            );
+        }
 
         // Prefer dark themes on websites that support the browser preference.
         await page.emulateMediaFeatures([
