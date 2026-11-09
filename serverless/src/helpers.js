@@ -106,6 +106,18 @@ async function takePlainPuppeteerScreenshot(url, options) {
         browser = await puppeteer.launch(options.launchOptions);
         page = await browser.newPage();
 
+        // Enable ads-only blocking before navigating to the target website.
+        try {
+            const adBlocker = await getAdBlocker();
+            await adBlocker.enableBlockingInPage(page);
+            console.info('Default ad blocking enabled.');
+        } catch (error) {
+            console.warn(
+                'Ad blocking unavailable; continuing without it: ' +
+                error.message
+            );
+        }
+
         // Prefer dark themes on websites that support the browser preference.
         await page.emulateMediaFeatures([
             { name: 'prefers-color-scheme', value: 'dark' }
