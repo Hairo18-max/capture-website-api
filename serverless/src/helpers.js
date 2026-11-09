@@ -43,7 +43,7 @@ async function getOptions(queryParameters) {
     result.launchOptions = {
         headless: true,
         args: [
-            ...chromium.default.args,
+            ...chromium.args,
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--hide-scrollbars',
@@ -55,7 +55,7 @@ async function getOptions(queryParameters) {
             "--no-zygote",
             '--use-fake-ui-for-media-stream' // Pages that ask for webcam/microphone access
         ],
-        executablePath: process.env.CHROME_EXECUTABLE_PATH || await chromium.default.executablePath(),
+        executablePath: process.env.CHROME_EXECUTABLE_PATH || await chromium.executablePath(),
     };
     fieldValuesToNumber(result, 'width', 'height', 'quality', 'scaleFactor', 'timeout', 'delay', 'offset');
     return result;
